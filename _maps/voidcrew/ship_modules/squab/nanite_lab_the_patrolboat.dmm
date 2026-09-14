@@ -156,6 +156,7 @@
 /turf/template_noop,
 /area/template_noop)
 "qKA" = (
+/obj/machinery/nanite_programmer,
 /turf/template_noop,
 /area/template_noop)
 "sxx" = (
@@ -223,6 +224,7 @@
 /turf/template_noop,
 /area/template_noop)
 "ylI" = (
+/obj/machinery/nanite_program_hub,
 /turf/template_noop,
 /area/template_noop)
 
