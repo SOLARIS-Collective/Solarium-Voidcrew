@@ -143,39 +143,32 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 	turrets.Cut()
 	traders.Cut()
 	trader = null
+	loaded = FALSE
+	QDEL_NULL(reservation)
+	QDEL_NULL(outpost_template)
 	return ..()
 
 /obj/structure/overmap/trader_outpost/examine(mob/user)
 	. = ..()
 	. += span_notice("All vessels welcome. Vouchers and credits honored. Violence is bad for business.")
 
+/obj/structure/overmap/trader_outpost/start_level_load(mob/user, obj/structure/overmap/ship/waiting_ship)
+	INVOKE_ASYNC(src, PROC_REF(load_level))
+
+/obj/structure/overmap/trader_outpost/is_loading()
+	return loading
+
+/obj/structure/overmap/trader_outpost/is_loaded()
+	return loaded
+
 /**
  * Loads the outpost interior into a turf reservation (same approach as space ruins),
  * but permanently, outposts never unload.
  */
 /obj/structure/overmap/trader_outpost/proc/load_level()
-	if(reservation || loading)
-		return
+	if(loaded || loading)
+		return loaded
 	loading = TRUE
-
-	if(!outpost_template)
-		outpost_template = new template_type
-
-	if(!outpost_template.width || !outpost_template.height)
-		log_mapping("TRADER OUTPOST: Template '[outpost_template.name]' has no dimensions, cannot load.")
-		loading = FALSE
-		return
-
-	// Ships dock in per-ship hangar berths (outpost_hangar.dm), so the
-	// reservation only needs to fit the interior itself.
-	reservation = SSmapping.request_turf_block_reservation(outpost_template.width, outpost_template.height, 1)
-	if(!reservation)
-		loading = FALSE
-		return
-
-	var/turf/bottom_left = reservation.bottom_left_turfs[1]
-	template_bottom_left = bottom_left
-
 	var/load_success = FALSE
 	try
 		if(!outpost_template)
@@ -191,20 +184,17 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 					link_interior_machinery()
 					load_success = TRUE
 	catch(var/exception/e)
-		log_mapping("TRADER OUTPOST: Failed to load '[outpost_template.name]': [e]")
-		load_success = FALSE
-
+		log_mapping("TRADER OUTPOST: Failed to load '[name]': [e]")
 	if(!load_success)
-		qdel(reservation)
-		reservation = null
+		QDEL_NULL(reservation)
 		template_bottom_left = null
-		loading = FALSE
-		return
-
-	link_interior_machinery()
-
-	loaded = TRUE
+	loaded = load_success
+	// Outside the try: a runtime there unwinds the whole load (outpost_network.dm)
+	if(loaded)
+		spawn_network_pad()
 	loading = FALSE
+	SEND_SIGNAL(src, COMSIG_VOIDCREW_SITE_LOAD_FINISHED, loaded)
+	return loaded
 
 /**
  * Finds the outpost machinery the template spawned and links it to this outpost.
@@ -313,7 +303,7 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 	if(acting.is_interdicted)
 		to_chat(user, span_warning("Cannot dock while interdicted!"))
 		return
-	if(concerned)
+	if(concerned || admin_operation || loading)
 		to_chat(user, span_notice("Too much traffic, try again later!"))
 		return
 	concerned = TRUE
@@ -393,6 +383,8 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 	// Open storefront UIs are looking at a stale catalog now; refresh them
 	for(var/mob/living/basic/outpost_trader/npc as anything in traders)
 		npc.shop_ui?.update_static_data_for_all_viewers()
+	// World population (voidcrew/modules/ambient_npcs): the dock workers unload it
+	SEND_SIGNAL(src, COMSIG_TRADER_OUTPOST_CONVOY)
 
 // ===== EMBARGO / AGGRESSION =====
 
@@ -432,6 +424,9 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 /obj/structure/overmap/trader_outpost/register_aggression(mob/living/offender)
 	if(!istype(offender) || !offender.mind)
 		return
+	if(bounty_kingpin_excuses_aggression(src, offender)) return // BOUNTY P9 (kingpin): no property strikes for hunters in his shootout; PvP still counts
+	// World population (voidcrew/modules/ambient_npcs): bystanders near the fight duck and leave
+	SEND_SIGNAL(src, COMSIG_TRADER_OUTPOST_VIOLENCE, offender)
 	if(is_marked_aggressor(offender.mind))
 		return
 
@@ -543,15 +538,8 @@ GLOBAL_LIST_EMPTY(trader_outposts)
 			&& T.y >= bottom_left.y && T.y < bottom_left.y + outpost.outpost_template.height)
 			return outpost
 		for(var/datum/outpost_berth/berth as anything in outpost.berths)
-			var/turf/hangar_bottom_left = berth?.hangar_bottom_left
-			var/datum/turf_reservation/reservation = berth?.reservation
-			if(!hangar_bottom_left || !reservation || hangar_bottom_left.z != T.z)
-				continue
-			if(T.x < hangar_bottom_left.x || T.x >= hangar_bottom_left.x + reservation.width)
-				continue
-			if(T.y < hangar_bottom_left.y || T.y >= hangar_bottom_left.y + reservation.height)
-				continue
-			return outpost
+			if(berth?.contains_turf(T))
+				return outpost
 	return null
 
 // ===== ZONE VARIANTS =====

@@ -767,6 +767,7 @@
 	DEFAULT_QUEUE_OR_CALL_VERB(VERB_CALLBACK(src, PROC_REF(execute_mode)))
 
 ///proc version to finish /mob/verb/mode() execution. used in case the proc needs to be queued for the tick after its first called
+// VOIDCREW EDIT START - PR #284: Port MonkeStation soft-crit item use.
 /mob/proc/execute_mode()
 	if(ismecha(loc))
 		return
@@ -791,6 +792,8 @@
  *
  * Only works if flag/allow_respawn is allowed in config
  */
+// VOIDCREW EDIT END
+// VOIDCREW EDIT START - PR #284: Port MonkeStation soft-crit item use.
 /mob/verb/abandon_mob()
 	set name = "Respawn"
 	set category = "OOC"
@@ -837,6 +840,7 @@
 	M.PossessByPlayer(key)
 
 /// Checks if the mob can respawn yet according to the respawn delay
+// VOIDCREW EDIT END
 /mob/proc/check_respawn_delay(override_delay = 0)
 	if(!override_delay && !CONFIG_GET(number/respawn_delay))
 		return TRUE
