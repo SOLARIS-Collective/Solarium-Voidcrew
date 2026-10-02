@@ -61,9 +61,42 @@
 		return //don't let them continue the attack chain because they'll waste money on a machine with no account
 
 	var/previous_balance = site?.treasury.account_balance
+	var/datum/bank_account/deposit_account = synced_bank_account
+	var/deposit_value = iscash(weapon) ? weapon.get_item_credit_value() : 0
 	. = ..()
 	if(site && site.treasury.account_balance > previous_balance)
 		site.treasury.add_log_to_history(0, "Physical deposit of [site.treasury.account_balance - previous_balance] cr from [user.ckey] to [site.treasury.account_holder]")
+	if(deposit_value && QDELETED(weapon))
+		metric_cash_deposit(deposit_account, user, deposit_value, weapon.type, "bank terminal")
+
+/// Switch only the presented card's account; neither the terminal nor either balance changes.
+/obj/machinery/computer/bank_machine/proc/link_id_account(obj/item/card/id/card, mob/living/user)
+	if(!istype(user) || QDELETED(user) || QDELETED(src) || !istype(card) || QDELETED(card) \
+		|| !user.can_perform_action(src) || !user.is_holding(card))
+		return FALSE
+	if(machine_stat & (BROKEN | NOPOWER))
+		balloon_alert(user, "terminal offline")
+		return FALSE
+	if(resolve_outpost_bank())
+		return FALSE
+	var/obj/structure/overmap/ship/ship = get_ship_from_atom(src)
+	if(!ship?.ship_account || QDELETED(ship.ship_account) || synced_bank_account != ship.ship_account)
+		balloon_alert(user, "no ship account connected")
+		return FALSE
+	// Join-password clearance also covers former lives; banking requires the current mind.
+	if(!user.mind || !(user.mind in ship.ship_team?.members))
+		balloon_alert(user, "ship crew only")
+		return FALSE
+	if(card.registered_account == synced_bank_account)
+		balloon_alert(user, "ID already linked")
+		return TRUE
+	if(card.registered_account)
+		card.registered_account.bank_cards -= card
+	card.registered_account = synced_bank_account
+	synced_bank_account.bank_cards |= card
+	balloon_alert(user, "ID account linked")
+	to_chat(user, span_notice("[card] is now linked to [synced_bank_account.account_holder]'s account."))
+	return TRUE
 
 /// Switch only the presented card's account; neither the terminal nor either balance changes.
 /obj/machinery/computer/bank_machine/proc/link_id_account(obj/item/card/id/card, mob/living/user)

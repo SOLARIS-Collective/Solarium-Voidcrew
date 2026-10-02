@@ -1,5 +1,6 @@
 /// This is the main proc. Despite what the name suggests,
 /// it instantly moves our mobile port to stationary port `new_dock`.
+// VOIDCREW EDIT START - PR #378: Keep plumbing connected when a ship docks or rotates.
 /obj/docking_port/mobile/proc/initiate_docking(obj/docking_port/stationary/new_dock, movement_direction, force=FALSE)
 	// Crashing this ship with NO SURVIVORS
 
@@ -9,6 +10,11 @@
 	// shuttle-purchase flow all hit it). Hand check() the error code it already handles.
 	if(isnull(new_dock))
 		return DOCKING_NULL_DESTINATION
+
+	// VOIDCREW EDIT ADDITION START: also enforce bay ownership on forced template loads.
+	if(!new_dock.allows_ship_bay_docking(src))
+		return DOCKING_BLOCKED
+	// VOIDCREW EDIT ADDITION END
 
 	if(new_dock.get_docked() == src)
 		remove_ripples()
@@ -60,7 +66,9 @@
 	var/list/areas_to_move = list() //unique assoc list of areas on turfs being moved
 	var/list/underlying_areas = list() //unique assoc list of areas beneath turfs being moved
 
+	move_powernet_verdicts = list() // Voidcrew: see powernet_leaves_hull()
 	. = preflight_check(old_turfs, new_turfs, areas_to_move, underlying_areas, rotation)
+	move_powernet_verdicts = null
 	if(.)
 		repair_networks_after_aborted_move(old_turfs)
 		remove_ripples()
@@ -120,30 +128,9 @@
 	remove_ripples()
 	return DOCKING_SUCCESS
 
-/**
- * Rebuild the hull's powernets and plumbing after a move aborts between preflight_check()
- * and takeoff().
- *
- * By then beforeShuttleMove() has severed every cable on the hull, and it deliberately
- * skips the deferred neighbour re-propagation (see /obj/structure/cable/beforeShuttleMove)
- * that used to heal exactly this window - so without this pass an aborted dock leaves the
- * whole grid cut, machines disconnected, until the next successful move. Nothing has moved
- * yet, so propagating from any severed cable rebuilds its grid in place; the rest of that
- * grid then short-circuits on the net it built, and untouched cables never had theirs cut.
- *
- * Plumbing components disconnect in beforeShuttleMove() the same way and are re-enabled
- * in place by restore_plumbing_after_aborted_move() (voidcrew/edits/machinery/plumbing_shuttle_move.dm).
- */
-/obj/docking_port/mobile/proc/repair_networks_after_aborted_move(list/old_turfs)
-	for(var/i in 1 to length(old_turfs))
-		CHECK_TICK
-		var/turf/oldT = old_turfs[i]
-		if(!oldT)
-			continue
-		for(var/obj/structure/cable/cut_cable in oldT)
-			cut_cable.propagate_if_no_network()
-	restore_plumbing_after_aborted_move(old_turfs)
-
+/// Voidcrew: powernet -> TRUE/FALSE verdicts from powernet_leaves_hull(), valid for one
+/// preflight_check() pass only. Null outside a move.
+// VOIDCREW EDIT END
 /obj/docking_port/mobile/proc/preflight_check(list/old_turfs, list/new_turfs, list/areas_to_move, list/underlying_areas, rotation)
 	for(var/i in 1 to length(old_turfs))
 		CHECK_TICK
